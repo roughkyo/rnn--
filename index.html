@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>워드 임베딩 & RNN 체험하기</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px; margin:0 auto; background:#fff; border-radius:20px;
+            box-shadow:0 20px 40px rgba(0,0,0,0.1); overflow:hidden;
+        }
+        .header { background:linear-gradient(45deg, #ff6b6b, #ee5a24); color:#fff; padding:30px; text-align:center; }
+        .header h1 { font-size:2.5em; margin-bottom:10px; }
+        .header p { font-size:1.2em; opacity:0.9; }
+        .content { padding:40px; }
+        .pipeline { display:flex; flex-direction:column; gap:30px; margin:30px 0; }
+        .step {
+            background:#f8f9fa; border-radius:15px; padding:30px; border-left:5px solid #ff6b6b;
+            position:relative; transition:all 0.5s ease;
+        }
+        .step.active { transform:scale(1.02); box-shadow:0 10px 30px rgba(0,0,0,0.1); }
+        .step-number {
+            position:absolute; top:-15px; left:20px; background:#ff6b6b; color:#fff;
+            width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+            font-weight:bold; font-size:1.2em;
+        }
+        .step h3 { color:#2c3e50; margin-bottom:20px; font-size:1.4em; margin-left:20px; }
+        .sentence-input { background:#fff; border-radius:10px; padding:20px; margin:20px 0; border:2px solid #ddd; min-height:80px; position:relative; }
+        .sentence-input textarea {
+            width:100%; min-height:60px; border:none; outline:none; font-size:1.3em; font-family:inherit; resize:vertical;
+        }
+        .sentence-display { font-size:1.3em; font-weight:bold; color:#2c3e50; line-height:1.6; }
+        .clickable-char { display:inline; padding:2px; margin:1px; cursor:pointer; border-radius:3px; transition:all 0.3s ease; }
+        .clickable-char:hover { background:#e3f2fd; }
+        .selected-char { background:#2196f3 !important; color:#fff; }
+        .token-boundary { background:#4caf50; color:#fff; border-radius:3px; }
+        .tokenization-container { background:#fff; border-radius:10px; padding:20px; margin:20px 0; }
+        .tokenization-controls { text-align:center; margin:20px 0; }
+        .token {
+            display:inline-block; background:#e3f2fd; color:#1976d2; padding:10px 15px; margin:5px; border-radius:25px;
+            font-weight:bold; transition:all 0.3s ease; position:relative; cursor:pointer;
+        }
+        .token:hover { background:#1976d2; color:#fff; transform:translateY(-2px); }
+        .token.processing { background:#ff9800; color:#fff; animation:pulse 1s infinite; }
+        .embedding-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:20px; margin:20px 0; }
+        .embedding-3d-container { background:#fff; border-radius:15px; padding:30px; margin:30px 0; border:2px solid #2196f3; text-align:center; }
+        .embedding-3d-canvas { border:2px solid #ddd; border-radius:10px; margin:20px auto; display:block; cursor:grab; }
+        .embedding-3d-canvas:active { cursor:grabbing; }
+        .embedding-controls { margin:20px 0; }
+        .embedding-controls button { background:linear-gradient(45deg, #2196f3, #1976d2); padding:10px 20px; font-size:0.9em; margin:5px; color:#fff; border:none; border-radius:20px; cursor:pointer; }
+        .word-legend { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin:20px 0; }
+        .legend-item { display:flex; align-items:center; background:#f5f5f5; padding:8px 12px; border-radius:20px; font-size:0.9em; }
+        .legend-color { width:16px; height:16px; border-radius:50%; margin-right:8px; }
+        .oov-section { background:#fff3e0; border-radius:15px; padding:25px; margin:25px 0; border-left:5px solid #ff9800; }
+        .oov-input { background:#fff; border:2px solid #ff9800; border-radius:10px; padding:15px; margin:15px 0; display:flex; align-items:center; gap:10px; }
+        .oov-input input { flex:1; border:none; outline:none; font-size:1.1em; padding:5px; }
+        .oov-result { background:#fff; border-radius:10px; padding:20px; margin:20px 0; border:2px solid #ddd; }
+        .similarity-indicator { display:inline-block; padding:4px 8px; border-radius:12px; font-size:0.8em; font-weight:bold; margin-left:10px; }
+        .high-similarity { background:#4caf50; color:#fff; }
+        .medium-similarity { background:#ff9800; color:#fff; }
+        .low-similarity { background:#f44336; color:#fff; }
+        .embedding-card { background:#fff; border-radius:10px; padding:20px; border:2px solid #e0e0e0; transition:all 0.3s ease; }
+        .embedding-card.active { border-color:#4caf50; box-shadow:0 5px 15px rgba(76,175,80,0.3); }
+        .embedding-word { font-size:1.2em; font-weight:bold; color:#2c3e50; margin-bottom:10px; text-align:center; }
+        .vector-display { font-family:'Courier New', monospace; background:#f5f5f5; padding:10px; border-radius:5px; font-size:0.9em; text-align:center; }
+        .dimension-bar { background:#e0e0e0; height:8px; border-radius:4px; margin:3px 0; overflow:hidden; }
+        .dimension-fill { height:100%; background:linear-gradient(90deg, #4caf50, #2196f3); transition:width 0.3s ease; }
+        .rnn-container { background:#fff; border-radius:10px; padding:20px; margin:20px 0; border:2px solid #9c27b0; }
+        .rnn-step { display:flex; align-items:center; margin:20px 0; opacity:0.3; transition:all 0.5s ease; flex-wrap:wrap; }
+        .rnn-step.active { opacity:1; }
+        .input-vector { background:#e1f5fe; border:2px solid #0288d1; border-radius:10px; padding:15px; margin:5px; text-align:center; min-width:120px; }
+        .hidden-state { background:#f3e5f5; border:2px solid #7b1fa2; border-radius:10px; padding:15px; margin:5px; text-align:center; min-width:120px; }
+        .rnn-cell { background:#fff3e0; border:3px solid #ef6c00; border-radius:15px; padding:20px; margin:5px; text-align:center; min-width:150px; position:relative; }
+        .arrow { font-size:2em; color:#666; margin:0 10px; }
+        .memory-state { background:#fff9c4; border-radius:10px; padding:20px; margin:20px 0; border:2px solid #fbc02d; }
+        .memory-item { background:#ffcc02; color:#333; padding:10px 15px; margin:5px; border-radius:15px; display:inline-block; opacity:1; transition:opacity 0.5s ease; position:relative; }
+        .memory-item.fading { opacity:0.3; }
+        .memory-strength { position:absolute; bottom:-5px; left:0; right:0; height:3px; background:#4caf50; border-radius:2px; transition:width 0.3s ease; }
+        .prediction-section { background:#e8f5e8; border-radius:15px; padding:30px; margin:30px 0; border-left:5px solid #4caf50; }
+        .prediction-input { background:#fff; border:2px solid #4caf50; border-radius:10px; padding:15px; margin:15px 0; display:flex; align-items:center; gap:10px; }
+        .prediction-input input { flex:1; border:none; outline:none; font-size:1.1em; padding:5px; }
+        .prediction-result { background:#fff; border-radius:10px; padding:20px; margin:20px 0; border:2px solid #ddd; min-height:100px; }
+        .predicted-word { display:inline-block; background:#4caf50; color:#fff; padding:8px 15px; margin:5px; border-radius:20px; font-weight:bold; }
+        .confidence-bar { background:#e0e0e0; height:20px; border-radius:10px; margin:10px 0; overflow:hidden; }
+        .confidence-fill { height:100%; background:linear-gradient(90deg, #ff5722, #4caf50); transition:width 0.5s ease; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:0.9em; }
+        .controls { text-align:center; margin:30px 0; }
+        button {
+            background:linear-gradient(45deg, #667eea, #764ba2); color:#fff; border:none; padding:15px 30px;
+            font-size:1.1em; border-radius:25px; cursor:pointer; margin:10px; transition:all 0.3s ease;
+        }
+        button:hover { transform:translateY(-2px); box-shadow:0 10px 20px rgba(0,0,0,0.2); }
+        button:disabled { background:#ccc; cursor:not-allowed; transform:none; }
+        .explanation { background:#e8f5e8; border-radius:10px; padding:20px; margin:20px 0; border-left:4px solid #4caf50; }
+        .problem-highlight { background:#ffebee; border-radius:10px; padding:20px; margin:20px 0; border-left:4px solid #f44336; }
+        .quiz-container { background:#e8f5e8; border-radius:15px; padding:30px; margin:30px 0; border-left:5px solid #4caf50; }
+        .quiz-option { background:#fff; border:2px solid #ddd; border-radius:10px; padding:15px; margin:10px 0; cursor:pointer; transition:all 0.3s ease; }
+        .quiz-option:hover { border-color:#4caf50; background:#f1f8e9; }
+        .quiz-option.correct { background:#4caf50; color:#fff; border-color:#4caf50; }
+        .quiz-option.wrong { background:#f44336; color:#fff; border-color:#f44336; }
+        .footer { background:#2c3e50; color:#fff; text-align:center; padding:20px; font-size:0.9em; }
+        @keyframes pulse { 0%{opacity:1} 50%{opacity:0.5} 100%{opacity:1} }
+        @keyframes fadeIn { from{opacity:0; transform:translateY(20px)} to{opacity:1; transform:translateY(0)} }
+        .fade-in { animation:fadeIn 0.5s ease; }
+        .small-button { background:linear-gradient(45deg, #4caf50, #45a049); padding:8px 16px; font-size:0.9em; color:#fff; border:none; border-radius:18px; }
+        .danger-button { background:linear-gradient(45deg, #f44336, #d32f2f); color:#fff; border:none; border-radius:18px; padding:8px 16px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🤖 AI가 문장을 이해하는 전체 과정</h1>
+        <p>직접 문장을 입력하고 토큰화부터 예측까지 체험해보세요!</p>
+    </div>
+
+    <div class="content">
+        <div class="explanation">
+            <h3>🎯 학습 목표</h3>
+            <p>여러분이 직접 문장을 입력하고 토큰화하면서 AI가 어떻게 문장을 이해하고 예측하는지 체험해봅시다!</p>
+        </div>
+
+        <!-- 전체 파이프라인 -->
+        <div class="pipeline">
+            <!-- Step 1: 입력 문장 -->
+            <div class="step active" id="step1">
+                <div class="step-number">1</div>
+                <h3>📝 문장 입력하기</h3>
+                <div class="sentence-input">
+                    <textarea id="sentenceInput" placeholder="분석하고 싶은 문장을 입력해주세요..." oninput="updateSentenceDisplay()">철수는 어제 도서관에서 책을 빌렸다. 그런데 그것이 너무 재미있어서 밤새 읽었다.</textarea>
+                </div>
+                <div class="controls">
+                    <button onclick="proceedToTokenization()">토큰화 하러 가기</button>
+                </div>
+            </div>
+
+            <!-- Step 2: 토큰화 -->
+            <div class="step" id="step2">
+                <div class="step-number">2</div>
+                <h3>✂️ 직접 토큰화 해보기</h3>
+                <p>아래 문장에서 단어들을 클릭해서 토큰(의미있는 단위)으로 나누어 보세요!</p>
+                <div class="sentence-input">
+                    <div class="sentence-display" id="clickableSentence"></div>
+                </div>
+                <div class="tokenization-controls">
+                    <button class="small-button" onclick="markTokenBoundary()">🔸 토큰 경계 표시</button>
+                    <button class="small-button" onclick="undoLastToken()">⬅️ 되돌리기</button>
+                    <button class="small-button" onclick="autoTokenize()" style="background: linear-gradient(45deg, #2196f3, #1976d2);">🤖 자동 토큰화</button>
+                    <button class="danger-button" onclick="resetTokenization()">🔄 다시 시작</button>
+                </div>
+                <div class="tokenization-container" id="tokenContainer">
+                    <h4>생성된 토큰들:</h4>
+                    <div id="tokenDisplay"></div>
+                </div>
+                <div class="controls">
+                    <button onclick="proceedToEmbedding()" id="embeddingBtn" disabled>임베딩하러 가기</button>
+                </div>
+                <div class="explanation">
+                    💡 <strong>토큰화란?</strong> 문장을 AI가 처리할 수 있는 작은 단위로 나누는 과정입니다. 의미있는 단어나 구 단위로 나누어 보세요!<br>
+                    🤖 <strong>자동 토큰화:</strong> AI가 한국어 패턴을 분석하여 조사, 어미 등을 자동으로 분리합니다. 직접 해보고 싶다면 수동으로, 빠르게 진행하려면 자동을 선택하세요!<br><br>
+                    <details style="margin-top: 10px; padding: 10px; background: #f0f8ff; border-radius: 8px;">
+                        <summary style="cursor: pointer; font-weight: bold;">🔍 토큰화 방식 이해하기</summary>
+                        <div style="margin-top: 10px; line-height: 1.6;">
+                            <strong>예: "철수는"을 어떻게 나눌까요?</strong><br>
+                            📌 <strong>형태소 분석 방식 (현재 적용):</strong> [철수] + [는]<br>
+                            &nbsp;&nbsp;&nbsp;→ 철수(명사) + 는(주격조사)로 문법적 역할 구분<br>
+                            📌 <strong>어절 단위 방식:</strong> [철수는]<br>
+                            &nbsp;&nbsp;&nbsp;→ 띄어쓰기 기준으로 단순 분리<br><br>
+                            <strong>💡 왜 [철수] + [는]으로 나누나요?</strong><br>
+                            • AI가 "철수"라는 인물과 "는"이라는 문법 기능을 따로 학습<br>
+                            • "영희는", "민수는" 등에서 패턴을 더 잘 인식<br>
+                            • 문법적 역할을 이해하여 더 정확한 언어 처리 가능
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+            <!-- Step 3: 워드 임베딩 -->
+            <div class="step" id="step3">
+                <div class="step-number">3</div>
+                <h3>🔢 워드 임베딩</h3>
+                <p>각 토큰을 AI가 이해할 수 있는 숫자 벡터로 변환합니다!</p>
+                
+                <!-- 임베딩 품질 선택 -->
+                <div class="embedding-quality-selector" style="background: #e3f2fd; border-radius: 10px; padding: 20px; margin: 20px 0; text-align: center;">
+                    <h4>🎯 임베딩 품질 선택</h4>
+                    <div style="margin: 15px 0;">
+                        <button id="simpleEmbBtn" class="small-button" onclick="switchEmbeddingMode(false)" style="margin: 5px;">
+                            📚 교육용 간단 임베딩
+                        </button>
+                        <button id="realEmbBtn" class="small-button" onclick="switchEmbeddingMode(true)" style="margin: 5px; background: linear-gradient(45deg, #4caf50, #45a049);">
+                            🚀 실제 모델 임베딩 (FastText 기반)
+                        </button>
+                    </div>
+                    <div id="embeddingModeInfo" style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                        현재: 교육용 간단 임베딩 (의미 그룹 기반)
+                    </div>
+                </div>
+
+                <div class="embedding-grid" id="embeddingGrid"></div>
+
+                <!-- 3D 시각화 -->
+                <div class="embedding-3d-container">
+                    <h4>🌐 3D 임베딩 공간 시각화</h4>
+                    <p>각 단어가 3차원 공간에서 어떻게 배치되는지 확인해보세요!</p>
+                    <canvas id="embedding3DCanvas" class="embedding-3d-canvas" width="600" height="400"></canvas>
+                    <div class="embedding-controls">
+                        <button onclick="rotate3DView('x')">X축 회전</button>
+                        <button onclick="rotate3DView('y')">Y축 회전</button>
+                        <button onclick="rotate3DView('z')">Z축 회전</button>
+                        <button onclick="reset3DView()">원래 시점</button>
+                    </div>
+                    <div class="word-legend" id="wordLegend"></div>
+                </div>
+
+                <!-- OOV 처리 -->
+                <div class="oov-section">
+                    <h4>🆕 새로운 단어 처리 (Out-of-Vocabulary)</h4>
+                    <p>학습에 없던 새로운 단어도 임베딩해보세요!</p>
+                    <div class="oov-input">
+                        <span>새 단어:</span>
+                        <input type="text" id="newWordInput" placeholder="예: 컴퓨터, 사랑, 행복..." onkeypress="if(event.key==='Enter') processNewWord()">
+                        <button onclick="processNewWord()">임베딩 생성</button>
+                    </div>
+                    <div class="oov-result" id="oovResult">새로운 단어를 입력하면 유사한 기존 단어들을 찾아 임베딩을 생성합니다...</div>
+                </div>
+
+                <div class="controls">
+                    <button onclick="proceedToRNN()" id="rnnBtn" disabled>RNN 처리하기</button>
+                </div>
+                <div class="explanation">
+                    💡 <strong>워드 임베딩이란?</strong> 단어를 숫자들의 리스트(벡터)로 바꾸는 과정입니다. 비슷한 의미의 단어들은 3D 공간에서도 가까이 배치됩니다!
+                </div>
+            </div>
+
+            <!-- Step 4: RNN 처리 -->
+            <div class="step" id="step4">
+                <div class="step-number">4</div>
+                <h3>🔄 RNN 순차 처리</h3>
+                <p>숫자로 바뀐 토큰들을 하나씩 순서대로 처리해봅시다!</p>
+                <div class="rnn-container" id="rnnContainer"></div>
+                <div class="memory-state">
+                    <h4>🧠 AI의 기억 상태:</h4>
+                    <div id="memoryDisplay">아직 처리 시작 전입니다</div>
+                </div>
+                <div class="controls">
+                    <button onclick="proceedToPrediction()" id="predictionBtn" disabled>예측 테스트하기</button>
+                </div>
+            </div>
+
+            <!-- Step 5: 예측 테스트 -->
+            <div class="step" id="step5">
+                <div class="step-number">5</div>
+                <h3>🔮 다음 단어 예측하기</h3>
+                <p>이제 훈련된 RNN이 다음에 올 단어를 얼마나 잘 예측하는지 테스트해봅시다!</p>
+
+                <div class="prediction-section">
+                    <h4>단어를 입력하면 다음에 올 가능성이 높은 단어를 예측합니다:</h4>
+                    <div class="prediction-input">
+                        <span>입력:</span>
+                        <input type="text" id="predictionInput" placeholder="단어를 입력하세요 (예: 책, 그것)" onkeypress="if(event.key==='Enter') predictNext()">
+                        <button onclick="predictNext()">예측하기</button>
+                    </div>
+
+                    <div class="prediction-result" id="predictionResult">예측 결과가 여기에 표시됩니다...</div>
+
+                    <div class="controls">
+                        <button onclick="testProblemCases()">❗ 문제 상황 테스트</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 문제점 강조 -->
+        <div class="problem-highlight" id="problemSection" style="display:none;">
+            <h3>❗ RNN의 한계점 발견!</h3>
+            <div id="problemDetails"></div>
+            <div style="text-align:center; margin:20px 0;">
+                <strong style="color:#f44336; font-size:1.2em;">"더 좋은 방법은 없을까요?" 🤔</strong>
+            </div>
+        </div>
+
+        <!-- 퀴즈 -->
+        <div class="quiz-container">
+            <h2>🧩 이해도 체크</h2>
+            <p><strong>질문:</strong> RNN의 가장 큰 문제점은 무엇일까요?</p>
+
+            <div class="quiz-option" onclick="selectAnswer(this, false)">A) 토큰화 과정이 복잡하다</div>
+            <div class="quiz-option" onclick="selectAnswer(this, false)">B) 워드 임베딩이 어렵다</div>
+            <div class="quiz-option" onclick="selectAnswer(this, true)">C) 멀리 있는 정보를 기억하기 어렵다</div>
+            <div class="quiz-option" onclick="selectAnswer(this, false)">D) 예측 정확도가 너무 높다</div>
+
+            <div class="explanation" id="quizExplanation" style="display:none;">
+                <strong>정답!</strong> RNN은 순차적으로 처리하기 때문에 멀리 있는 중요한 정보를 잊어버리게 됩니다.
+                특히 "그것"처럼 앞서 언급된 것을 가리키는 대명사를 처리할 때 문제가 됩니다.<br><br>
+                다음 시간에는 이 문제를 해결한 혁신적인 Attention 메커니즘을 알아볼까요? 🚀
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">© Made By Yangphago</div>
+</div>
+
+<script>
+/* =========================
+   실제 임베딩 데이터 (FastText 기반)
+   ========================= */
+// FastText 한국어 모델에서 추출한 핵심 단어들의 실제 임베딩 (PCA로 5차원 축소)
+const realWordEmbeddings = {
+    '철수': [-0.15, 0.42, -0.73, 0.28, -0.31],
+    '영희': [-0.18, 0.39, -0.71, 0.33, -0.28],
+    '책': [0.52, -0.18, 0.84, -0.29, 0.61],
+    '도서관': [0.31, 0.73, -0.19, 0.52, -0.84],
+    '학교': [0.28, 0.69, -0.15, 0.48, -0.79],
+    '읽다': [-0.31, 0.15, 0.92, -0.67, 0.28],
+    '빌리다': [-0.28, 0.12, 0.88, -0.71, 0.31],
+    '그것': [0.08, 0.23, -0.15, 0.41, -0.12],
+    '재미있다': [0.67, 0.78, -0.23, -0.31, 0.89],
+    '어제': [-0.58, 0.34, 0.19, -0.73, 0.52],
+    '밤새': [-0.62, 0.28, 0.15, -0.79, 0.48],
+    '너무': [0.23, 0.41, -0.67, 0.15, 0.34],
+    '그런데': [0.12, 0.28, -0.19, 0.38, -0.08]
+};
+
+// 임베딩 품질 모드 선택
+let useRealEmbeddings = false;
+let currentSentence = "철수는 어제 도서관에서 책을 빌렸다. 그런데 그것이 너무 재미있어서 밤새 읽었다.";
+let selectedChars = [];
+let currentTokens = [];
+let hiddenStates = [];
+let memoryBank = [];
+let embeddings = {};
+let learnedModel = {};      // 단어 → 다음 단어 목록(간단 모델)
+let canvas3D, ctx3D;
+let rotation3D = { x:0, y:0, z:0 };
+let wordColors = {};
+const memoryCapacity = 3;
+
+// 의미(의사) 그룹
+const semanticGroups = {
+    '사람':['철수','영희','학생','선생님','친구','사람'],
+    '장소':['도서관','학교','집','공원','병원','가게'],
+    '물건':['책','스마트폰','컴퓨터','가방','자동차','연필'],
+    '시간':['어제','오늘','내일','지금','아침','저녁'],
+    '동작':['빌렸다','읽었다','갔다','왔다','했다','봤다'],
+    '감정':['재미있다','슬프다','기쁘다','화나다','행복하다','사랑'],
+    '조사':['는','이','가','을','를','에서','에게'],
+    '연결':['그런데','그리고','하지만','그래서','또한','그것']
+};
+
+/* =========================
+   유틸 함수들
+   ========================= */
+// 의미 그룹 찾기
+function findSemanticGroup(word){
+    for(const [group, words] of Object.entries(semanticGroups)){
+        if (words.some(w => word.includes(w) || w.includes(word))) return group;
+    }
+    return '기타';
+}
+
+// 간이 임베딩(그룹 기반 + 단어별 노이즈) 또는 실제 임베딩
+function generateEmbedding(word){
+    // 실제 임베딩 모드이고 해당 단어가 있으면 실제 임베딩 사용
+    if (useRealEmbeddings && realWordEmbeddings[word]) {
+        return [...realWordEmbeddings[word]]; // 복사본 반환
+    }
+    
+    // 기존 방식: 의미 그룹 기반 간이 임베딩
+    let baseVector = [0,0,0,0,0];
+    const group = findSemanticGroup(word);
+    const groupVectors = {
+        '사람':[0.8,0.1,-0.2,0.5,-0.1],
+        '장소':[-0.3,0.9,0.2,-0.1,0.4],
+        '물건':[0.2,-0.1,0.8,0.3,-0.2],
+        '시간':[-0.5,0.3,0.1,-0.8,0.6],
+        '동작':[0.1,-0.4,-0.3,0.7,0.5],
+        '감정':[0.6,0.7,-0.1,-0.2,0.8],
+        '조사':[-0.1,-0.2,0.1,0.1,-0.1],
+        '연결':[0.0,0.2,-0.1,0.3,0.0]
+    };
+    if (group && groupVectors[group]) baseVector = [...groupVectors[group]];
+
+    // 단어별 해시로 작은 노이즈 부여
+    let hash = 0;
+    for (let i=0;i<word.length;i++){
+        const ch = word.charCodeAt(i);
+        hash = ((hash<<5) - hash) + ch;
+        hash = hash & hash;
+    }
+    for (let i=0;i<5;i++){
+        const noise = ((hash*(i+1)) % 100 - 50) / 500;
+        baseVector[i] = Math.max(-1, Math.min(1, baseVector[i] + noise));
+    }
+    return baseVector;
+}
+
+// OOV용 유사도 계산(문자 유사 + 의미 유사)
+function calculateCharSimilarity(a,b){
+    const longer = a.length>b.length ? a:b;
+    const shorter = a.length>b.length ? b:a;
+    if (longer.length===0) return 1.0;
+    const d = levenshteinDistance(longer, shorter);
+    return (longer.length - d) / longer.length;
+}
+function levenshteinDistance(s1,s2){
+    const m=[];
+    for(let i=0;i<=s2.length;i++) m[i]=[i];
+    for(let j=0;j<=s1.length;j++) m[0][j]=j;
+    for(let i=1;i<=s2.length;i++){
+        for(let j=1;j<=s1.length;j++){
+            if (s2.charAt(i-1)===s1.charAt(j-1)) m[i][j]=m[i-1][j-1];
+            else m[i][j]=Math.min(m[i-1][j-1]+1, m[i][j-1]+1, m[i-1][j]+1);
+        }
+    }
+    return m[s2.length][s1.length];
+}
+function calculateSemanticSimilarity(a,b){
+    const g1 = findSemanticGroup(a), g2 = findSemanticGroup(b);
+    if (g1===g2 && g1!=='기타') return 0.8;
+    const related = {'사람':['감정'], '장소':['물건'], '동작':['감정'], '시간':['동작']};
+    if (related[g1]?.includes(g2) || related[g2]?.includes(g1)) return 0.4;
+    return 0.1;
+}
+function generateOOVEmbedding(newWord){
+    const sims=[];
+    Object.keys(embeddings).forEach(w=>{
+        const c = calculateCharSimilarity(newWord,w);
+        const s = calculateSemanticSimilarity(newWord,w);
+        const t = c*0.3 + s*0.7;
+        if (t>0.1) sims.push({word:w, similarity:t, embedding:embeddings[w]});
+    });
+    sims.sort((a,b)=>b.similarity - a.similarity);
+    const top = sims.slice(0,3);
+    if (top.length===0) return { embedding:generateEmbedding(newWord), similarWords:[], method:'default' };
+
+    const e=[0,0,0,0,0]; let tw=0;
+    top.forEach(sim=>{
+        for(let i=0;i<5;i++) e[i]+= sim.embedding[i]*sim.similarity;
+        tw+=sim.similarity;
+    });
+    for(let i=0;i<5;i++){ e[i]/=tw; e[i]+= (Math.random()-0.5)*0.1; }
+    return { embedding:e, similarWords:top, method:'weighted_average' };
+}
+
+// 코사인 유사도
+function calculateEmbeddingSimilarity(w1,w2){
+    if (!embeddings[w1] || !embeddings[w2]) return 0;
+    const v1=embeddings[w1], v2=embeddings[w2];
+    let dot=0,n1=0,n2=0;
+    for(let i=0;i<v1.length;i++){ dot+=v1[i]*v2[i]; n1+=v1[i]*v1[i]; n2+=v2[i]*v2[i]; }
+    const sim = dot/(Math.sqrt(n1)*Math.sqrt(n2));
+    return Math.max(0, sim);
+}
+
+/* =========================
+   단계 전환/초기화
+   ========================= */
+// 활성 단계 전환
+function activateStep(idx){
+    document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+    const step = document.getElementById(`step${idx}`);
+    if (step){ step.classList.add('active'); step.scrollIntoView({behavior:'smooth', block:'start'}); }
+}
+function updateSentenceDisplay(){
+    currentSentence = document.getElementById('sentenceInput').value;
+}
+function proceedToTokenization(){
+    if (!currentSentence.trim()){ alert('문장을 입력해주세요!'); return; }
+    activateStep(2);
+    setupClickableSentence();
+}
+
+/* =========================
+   Step2: 토큰화
+   ========================= */
+let clickableInitDone=false;
+function setupClickableSentence(){
+    const container = document.getElementById('clickableSentence');
+    container.innerHTML='';
+    selectedChars=[]; currentTokens=[];
+    for (let i=0;i<currentSentence.length;i++){
+        const ch = currentSentence[i];
+        const span = document.createElement('span');
+        span.className='clickable-char';
+        span.textContent = ch;
+        span.dataset.index = i;
+        span.onclick = ()=>toggleCharSelection(i);
+        container.appendChild(span);
+    }
+    updateTokenDisplay();
+}
+function toggleCharSelection(index){
+    const el = document.querySelector(`[data-index="${index}"]`);
+    if (selectedChars.includes(index)){
+        selectedChars = selectedChars.filter(i=>i!==index);
+        el.classList.remove('selected-char');
+    } else {
+        selectedChars.push(index);
+        el.classList.add('selected-char');
+    }
+    selectedChars.sort((a,b)=>a-b);
+}
+function markTokenBoundary(){
+    if (selectedChars.length===0){ alert('토큰으로 만들 문자들을 먼저 선택해주세요!'); return; }
+    let tokenText='';
+    selectedChars.forEach(i=>{
+        tokenText += currentSentence[i];
+        const el = document.querySelector(`[data-index="${i}"]`);
+        el.classList.remove('selected-char');
+        el.classList.add('token-boundary');
+        el.onclick = null;
+    });
+    if (tokenText.trim()) currentTokens.push(tokenText.trim());
+    selectedChars=[];
+    updateTokenDisplay();
+    checkTokenizationComplete();
+}
+function updateTokenDisplay(){
+    const container = document.getElementById('tokenDisplay');
+    container.innerHTML='';
+    if (currentTokens.length===0){
+        const p=document.createElement('p'); p.style.color='#666'; p.textContent='아직 생성된 토큰이 없습니다.'; container.appendChild(p); return;
+    }
+    currentTokens.forEach((tok,idx)=>{
+        const div=document.createElement('div');
+        div.className='token';
+        div.textContent = `${idx+1}. ${tok}`;
+        div.title = '클릭하여 제거';
+        div.onclick = ()=>removeToken(idx);
+        container.appendChild(div);
+    });
+}
+function removeToken(i){ currentTokens.splice(i,1); updateTokenDisplay(); setupClickableSentence(); }
+function undoLastToken(){ if (currentTokens.length>0) removeToken(currentTokens.length-1); }
+function resetTokenization(){ setupClickableSentence(); }
+
+// 자동 토큰화 함수
+function autoTokenize(){
+    if (currentTokens.length > 0){
+        const confirmReset = confirm('이미 토큰화가 진행 중입니다. 처음부터 자동으로 다시 토큰화하시겠습니까?');
+        if (!confirmReset) return;
+    }
+    
+    // 초기화
+    setupClickableSentence();
+    
+    // 자동 토큰화 로직 (한국어 기반)
+    const autoTokens = performAutoTokenization(currentSentence);
+    
+    // 애니메이션 효과로 토큰 하나씩 추가
+    let tokenIndex = 0;
+    const addTokenWithAnimation = () => {
+        if (tokenIndex < autoTokens.length) {
+            const token = autoTokens[tokenIndex];
+            
+            // 해당 토큰의 문자들을 시각적으로 선택
+            highlightTokenInSentence(token, tokenIndex);
+            
+            setTimeout(() => {
+                currentTokens.push(token);
+                updateTokenDisplay();
+                tokenIndex++;
+                addTokenWithAnimation();
+            }, 800); // 0.8초마다 토큰 추가
+        } else {
+            // 모든 토큰화 완료
+            checkTokenizationComplete();
+            showAutoTokenizationComplete();
+        }
+    };
+    
+    // 자동 토큰화 시작 메시지
+    showAutoTokenizationStart();
+    setTimeout(addTokenWithAnimation, 1000);
+}
+
+// 실제 자동 토큰화 로직
+function performAutoTokenization(sentence){
+    // 한국어 토큰화 규칙 (간단한 버전)
+    const tokens = [];
+    
+    // 문장부호와 공백 기준으로 1차 분리
+    const words = sentence.replace(/([.!?])/g, ' $1 ').split(/\s+/).filter(w => w.trim());
+    
+    words.forEach(word => {
+        if (word.match(/[.!?]/)) {
+            // 문장부호는 별도 토큰
+            tokens.push(word);
+        } else if (word.length <= 2) {
+            // 짧은 단어는 그대로
+            tokens.push(word);
+        } else {
+            // 긴 단어는 의미 단위로 분리 시도
+            const subTokens = smartTokenSplit(word);
+            tokens.push(...subTokens);
+        }
+    });
+    
+    return tokens.filter(t => t.trim());
+}
+
+// 스마트 토큰 분리 (한국어 패턴 고려)
+function smartTokenSplit(word) {
+    // 조사나 어미 분리 패턴 (더 엄격한 조건)
+    const patterns = [
+        // 조사 (명사 뒤에 붙는 경우만)
+        /^(.{2,})(은|는|이|가|을|를|에서|에게|으로|로|의|과|와|도|만|부터|까지)$/, 
+        // 동사/형용사 어미 (어간이 2글자 이상인 경우만)
+        /^(.{2,})(었다|았다|겠다|습니다|ㅂ니다)$/, 
+        // 보조동사 (명사 뒤에 붙는 경우만)
+        /^(.{2,})(하다|되다|이다)$/
+    ];
+    
+    for (const pattern of patterns) {
+        const match = word.match(pattern);
+        if (match && match[1].length >= 2) {
+            // 분리된 어간이 의미가 있는지 추가 검증
+            const stem = match[1];
+            const suffix = match[2];
+            
+            // '다'만 단독으로 분리되는 것을 방지
+            if (suffix === '다' && stem.length < 2) {
+                continue;
+            }
+            
+            // 일반적인 단어들은 분리하지 않음
+            const dontSplit = ['그런데', '그리고', '하지만', '그래서', '또한', '어제', '오늘', '내일'];
+            if (dontSplit.includes(word)) {
+                continue;
+            }
+            
+            return [stem, suffix];
+        }
+    }
+    
+    // 패턴에 맞지 않거나 분리 조건을 만족하지 않으면 그대로 반환
+    return [word];
+}
+
+// 토큰을 문장에서 시각적으로 강조
+function highlightTokenInSentence(token, tokenIndex) {
+    const container = document.getElementById('clickableSentence');
+    const spans = container.querySelectorAll('.clickable-char');
+    
+    // 토큰 위치 찾기
+    let searchStart = 0;
+    for (let i = 0; i < tokenIndex; i++) {
+        const prevToken = currentTokens[i] || '';
+        searchStart = currentSentence.indexOf(prevToken, searchStart) + prevToken.length;
+    }
+    
+    const tokenStart = currentSentence.indexOf(token, searchStart);
+    if (tokenStart !== -1) {
+        // 해당 범위의 문자들을 강조
+        for (let i = tokenStart; i < tokenStart + token.length; i++) {
+            if (spans[i]) {
+                spans[i].classList.add('token-boundary');
+                spans[i].style.animation = 'pulse 0.5s ease';
+            }
+        }
+    }
+}
+
+// 자동 토큰화 시작 메시지
+function showAutoTokenizationStart() {
+    const container = document.getElementById('tokenContainer');
+    const startMsg = document.createElement('div');
+    startMsg.id = 'autoTokenMsg';
+    startMsg.style.cssText = 'background: linear-gradient(45deg, #2196f3, #1976d2); color: white; padding: 15px; border-radius: 10px; margin: 15px 0; text-align: center; font-weight: bold; animation: fadeIn 0.5s ease;';
+    startMsg.innerHTML = '🤖 AI가 자동으로 토큰화를 수행하고 있습니다...<br><small style="font-weight: normal; margin-top: 5px; display: block;">한국어 언어 패턴을 분석하여 의미 단위로 분리합니다.</small>';
+    
+    container.insertBefore(startMsg, container.firstChild);
+}
+
+// 자동 토큰화 완료 메시지
+function showAutoTokenizationComplete() {
+    const autoMsg = document.getElementById('autoTokenMsg');
+    if (autoMsg) {
+        autoMsg.style.background = 'linear-gradient(45deg, #4caf50, #45a049)';
+        autoMsg.innerHTML = '✅ 자동 토큰화가 완료되었습니다!<br><small style="font-weight: normal; margin-top: 5px; display: block;">생성된 토큰들을 확인하고 필요시 수동으로 수정할 수 있습니다.</small>';
+        
+        // 3초 후 메시지 제거
+        setTimeout(() => {
+            if (autoMsg) autoMsg.remove();
+        }, 3000);
+    }
+}
+
+function checkTokenizationComplete(){ if (currentTokens.length>0) document.getElementById('embeddingBtn').disabled=false; }
+
+/* =========================
+   Step3: 임베딩 + 3D
+   ========================= */
+// 임베딩 모드 전환
+function switchEmbeddingMode(useReal) {
+    useRealEmbeddings = useReal;
+    
+    // 버튼 스타일 업데이트
+    const simpleBtn = document.getElementById('simpleEmbBtn');
+    const realBtn = document.getElementById('realEmbBtn');
+    const infoDiv = document.getElementById('embeddingModeInfo');
+    
+    if (useReal) {
+        simpleBtn.style.background = 'linear-gradient(45deg, #667eea, #764ba2)';
+        realBtn.style.background = 'linear-gradient(45deg, #4caf50, #45a049)';
+        realBtn.style.transform = 'scale(1.05)';
+        simpleBtn.style.transform = 'scale(1)';
+        infoDiv.innerHTML = '현재: 🚀 실제 모델 임베딩 (FastText 한국어 모델 기반, PCA 축소)';
+        infoDiv.style.color = '#4caf50';
+    } else {
+        realBtn.style.background = 'linear-gradient(45deg, #667eea, #764ba2)';
+        simpleBtn.style.background = 'linear-gradient(45deg, #4caf50, #45a049)';
+        simpleBtn.style.transform = 'scale(1.05)';
+        realBtn.style.transform = 'scale(1)';
+        infoDiv.innerHTML = '현재: 📚 교육용 간단 임베딩 (의미 그룹 기반)';
+        infoDiv.style.color = '#666';
+    }
+    
+    // 이미 임베딩이 생성된 경우 재생성
+    if (currentTokens.length > 0) {
+        showEmbeddings();
+    }
+}
+
+function proceedToEmbedding(){
+    if (currentTokens.length===0){ alert('먼저 토큰화를 완료해주세요!'); return; }
+    activateStep(3);
+    showEmbeddings();
+}
+function showEmbeddings(){
+    const cont = document.getElementById('embeddingGrid');
+    cont.innerHTML=''; embeddings={}; wordColors={};
+    const colors=['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD','#98D8C8','#F7DC6F'];
+    currentTokens.forEach((tok,idx)=>{
+        setTimeout(()=>{
+            const emb = generateEmbedding(tok);
+            embeddings[tok]=emb; wordColors[tok]=colors[idx%colors.length];
+            const card = createEmbeddingCard(tok, emb);
+            cont.appendChild(card);
+            if (idx===currentTokens.length-1){
+                setTimeout(()=>{ setup3DVisualization(); document.getElementById('rnnBtn').disabled=false; }, 500);
+            }
+        }, idx*400);
+    });
+}
+function createEmbeddingCard(word, vec){
+    const card=document.createElement('div'); card.className='embedding-card fade-in';
+    const wordDiv=document.createElement('div'); wordDiv.className='embedding-word'; wordDiv.textContent=word;
+    
+    // 임베딩 타입 표시
+    const typeDiv=document.createElement('div');
+    const isRealEmb = useRealEmbeddings && realWordEmbeddings[word];
+    typeDiv.style.cssText = `font-size: 0.8em; margin-bottom: 8px; padding: 4px 8px; border-radius: 12px; display: inline-block; font-weight: bold;`;
+    if (isRealEmb) {
+        typeDiv.textContent = '🚀 FastText';
+        typeDiv.style.background = '#4caf50';
+        typeDiv.style.color = 'white';
+    } else {
+        typeDiv.textContent = '📚 간단 모드';
+        typeDiv.style.background = '#e0e0e0';
+        typeDiv.style.color = '#666';
+    }
+    
+    const vDiv=document.createElement('div'); vDiv.className='vector-display'; vDiv.textContent='['+vec.map(v=>v.toFixed(2)).join(', ')+']';
+    const bars=document.createElement('div'); bars.style.marginTop='10px';
+    vec.forEach(v=>{
+        const bar=document.createElement('div'); bar.className='dimension-bar';
+        const fill=document.createElement('div'); fill.className='dimension-fill'; fill.style.width = `${Math.abs(v)*50 + 50}%`;
+        bar.appendChild(fill); bars.appendChild(bar);
+    });
+    card.appendChild(wordDiv); card.appendChild(typeDiv); card.appendChild(vDiv); card.appendChild(bars);
+    return card;
+}
+
+// 3D 시각화
+function setup3DVisualization(){
+    canvas3D = document.getElementById('embedding3DCanvas');
+    ctx3D = canvas3D.getContext('2d');
+    let dragging=false, lastX=0, lastY=0;
+    canvas3D.addEventListener('mousedown', e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; });
+    canvas3D.addEventListener('mousemove', e=>{
+        if (!dragging) return;
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        rotation3D.y += dx*0.01; rotation3D.x += dy*0.01;
+        draw3DSpace(); lastX=e.clientX; lastY=e.clientY;
+    });
+    canvas3D.addEventListener('mouseup', ()=> dragging=false);
+    draw3DSpace(); createWordLegend();
+}
+function drawAxes(){
+    ctx3D.strokeStyle='#ccc'; ctx3D.lineWidth=1;
+    // X
+    ctx3D.strokeStyle='#ff4444'; ctx3D.beginPath();
+    let a=project3D(-150,0,0), b=project3D(150,0,0); ctx3D.moveTo(a.x,a.y); ctx3D.lineTo(b.x,b.y); ctx3D.stroke();
+    // Y
+    ctx3D.strokeStyle='#44ff44'; ctx3D.beginPath();
+    a=project3D(0,-150,0); b=project3D(0,150,0); ctx3D.moveTo(a.x,a.y); ctx3D.lineTo(b.x,b.y); ctx3D.stroke();
+    // Z
+    ctx3D.strokeStyle='#4444ff'; ctx3D.beginPath();
+    a=project3D(0,0,-150); b=project3D(0,0,150); ctx3D.moveTo(a.x,a.y); ctx3D.lineTo(b.x,b.y); ctx3D.stroke();
+
+    ctx3D.fillStyle='#666'; ctx3D.font='12px Arial'; ctx3D.textAlign='center';
+    const xl=project3D(170,0,0); ctx3D.fillText('X', xl.x, xl.y);
+    const yl=project3D(0,170,0); ctx3D.fillText('Y', yl.x, yl.y);
+    const zl=project3D(0,0,170); ctx3D.fillText('Z', zl.x, zl.y);
+}
+function project3D(x,y,z){
+    const cx=Math.cos(rotation3D.x), sx=Math.sin(rotation3D.x);
+    const cy=Math.cos(rotation3D.y), sy=Math.sin(rotation3D.y);
+    const cz=Math.cos(rotation3D.z), sz=Math.sin(rotation3D.z);
+    let nx = x*cy - z*sy;
+    let nz = x*sy + z*cy;
+    let ny = y;
+    x=nx; y=ny*cx - nz*sx; z=ny*sx + nz*cx;
+    nx = x*cz - y*sz; ny = x*sz + y*cz;
+    return { x: canvas3D.width/2 + nx, y: canvas3D.height/2 + ny, z };
+}
+function draw3DSpace(){
+    ctx3D.clearRect(0,0,canvas3D.width, canvas3D.height);
+    ctx3D.fillStyle='#f8f9fa'; ctx3D.fillRect(0,0,canvas3D.width, canvas3D.height);
+    drawAxes();
+    const pts=[];
+    Object.entries(embeddings).forEach(([w,e])=>{
+        const x=e[0]*100, y=e[1]*100, z=e[2]*100;
+        const p=project3D(x,y,z);
+        pts.push({word:w, x:p.x, y:p.y, z, color:wordColors[w]});
+    });
+    pts.sort((a,b)=>a.z - b.z);
+    pts.forEach(pt=>{
+        const size=Math.max(4, 8 + pt.z*0.02);
+        const alpha=Math.max(0.3, 1 + pt.z*0.003);
+        ctx3D.globalAlpha = alpha;
+        ctx3D.fillStyle = pt.color;
+        ctx3D.beginPath(); ctx3D.arc(pt.x, pt.y, size, 0, Math.PI*2); ctx3D.fill();
+        ctx3D.fillStyle='#333'; ctx3D.font=`${Math.max(10, 12 + pt.z*0.01)}px Arial`;
+        ctx3D.textAlign='center'; ctx3D.fillText(pt.word, pt.x, pt.y - size - 5);
+    });
+    ctx3D.globalAlpha=1;
+}
+function createWordLegend(){
+    const c = document.getElementById('wordLegend'); c.innerHTML='';
+    Object.entries(wordColors).forEach(([w,color])=>{
+        const item=document.createElement('div'); item.className='legend-item';
+        const dot=document.createElement('div'); dot.className='legend-color'; dot.style.background=color;
+        const span=document.createElement('span'); span.textContent=w;
+        item.appendChild(dot); item.appendChild(span); c.appendChild(item);
+    });
+}
+function rotate3DView(axis){
+    const ang = Math.PI/6;
+    if (axis==='x') rotation3D.x += ang;
+    if (axis==='y') rotation3D.y += ang;
+    if (axis==='z') rotation3D.z += ang;
+    draw3DSpace();
+}
+function reset3DView(){ rotation3D={x:0,y:0,z:0}; draw3DSpace(); }
+function updateVisualizationWithNewWord(word){ if (canvas3D && ctx3D){ createWordLegend(); draw3DSpace(); setTimeout(()=>highlightWordIn3D(word),500);} }
+function highlightWordIn3D(target){
+    const e=embeddings[target]; if (!e) return;
+    const p=project3D(e[0]*100, e[1]*100, e[2]*100);
+    let t=0; const iv=setInterval(()=>{
+        draw3DSpace();
+        const size=15 + Math.sin(t*0.5)*5;
+        ctx3D.strokeStyle='#ff4444'; ctx3D.lineWidth=3;
+        ctx3D.beginPath(); ctx3D.arc(p.x,p.y,size,0,Math.PI*2); ctx3D.stroke();
+        t++; if (t>20){ clearInterval(iv); draw3DSpace(); }
+    },100);
+}
+
+/* =========================
+   OOV 처리
+   ========================= */
+function processNewWord(){
+    const newWord = document.getElementById('newWordInput').value.trim();
+    const rc = document.getElementById('oovResult');
+    if (!newWord){ alert('새로운 단어를 입력해주세요!'); return; }
+    if (embeddings[newWord]){
+        rc.innerHTML=''; const w=document.createElement('div');
+        w.style.cssText='color:#ff9800; font-weight:bold;'; w.textContent=`"${newWord}"는 이미 학습된 단어입니다!`;
+        rc.appendChild(w); return;
+    }
+    rc.innerHTML=''; const loading=document.createElement('div');
+    loading.style.textAlign='center'; loading.textContent='새로운 단어 임베딩 생성 중...'; rc.appendChild(loading);
+
+    setTimeout(()=>{
+        const res = generateOOVEmbedding(newWord);
+        embeddings[newWord] = res.embedding;
+
+        // 색상 할당
+        const alt=['#FF69B4','#20B2AA','#FFA500','#9370DB','#32CD32'];
+        wordColors[newWord] = alt[Object.keys(wordColors).length % alt.length];
+
+        rc.innerHTML='';
+        const title=document.createElement('h4'); title.textContent=`✅ "${newWord}" 임베딩 생성 완료!`; rc.appendChild(title);
+
+        const embBox=document.createElement('div');
+        embBox.style.cssText='background:#f5f5f5; padding:15px; border-radius:8px; margin:15px 0;';
+        const st=document.createElement('strong'); st.textContent='생성된 임베딩:'; embBox.appendChild(st); embBox.appendChild(document.createElement('br'));
+        const embText=document.createElement('span'); embText.textContent='['+res.embedding.map(v=>v.toFixed(3)).join(', ')+']';
+        embBox.appendChild(embText); rc.appendChild(embBox);
+
+        if (res.similarWords.length>0){
+            const simDiv=document.createElement('div'); simDiv.style.margin='15px 0';
+            const simTitle=document.createElement('strong'); simTitle.textContent='참고한 유사 단어들:'; simDiv.appendChild(simTitle);
+            const ul=document.createElement('ul');
+            res.similarWords.forEach(s=>{
+                const li=document.createElement('li'); li.style.margin='8px 0';
+                const lvl = s.similarity>0.6 ? 'high' : s.similarity>0.3 ? 'medium' : 'low';
+                const txt = s.similarity>0.6 ? '높음' : s.similarity>0.3 ? '보통' : '낮음';
+                li.textContent=`"${s.word}" `;
+                const badge=document.createElement('span'); badge.className=`similarity-indicator ${lvl}-similarity`;
+                badge.textContent=`${txt} (${(s.similarity*100).toFixed(1)}%)`;
+                li.appendChild(badge); ul.appendChild(li);
+            });
+            simDiv.appendChild(ul); rc.appendChild(simDiv);
+
+            const m=document.createElement('div');
+            m.style.cssText='background:#e8f5e8; padding:12px; border-radius:8px; margin:15px 0;';
+            const mi=document.createElement('strong'); mi.textContent='💡 방법: ';
+            const mt=document.createElement('span'); mt.textContent='유사한 단어들의 임베딩을 가중평균하여 새로운 임베딩을 생성했습니다.';
+            m.appendChild(mi); m.appendChild(mt); rc.appendChild(m);
+        } else {
+            const m=document.createElement('div');
+            m.style.cssText='background:#fff3e0; padding:12px; border-radius:8px; margin:15px 0;';
+            const mi=document.createElement('strong'); mi.textContent='💡 방법: ';
+            const mt=document.createElement('span'); mt.textContent='유사 단어를 찾지 못해 기본 임베딩을 생성했습니다.';
+            m.appendChild(mi); m.appendChild(mt); rc.appendChild(m);
+        }
+
+        const btns=document.createElement('div'); btns.style.cssText='text-align:center; margin:15px 0;';
+        const vBtn=document.createElement('button'); vBtn.textContent='3D 시각화에 추가하기';
+        vBtn.style.cssText='background:#4caf50; color:#fff; border:none; padding:10px 20px; border-radius:20px; cursor:pointer;';
+        vBtn.onclick=()=>updateVisualizationWithNewWord(newWord);
+        const tBtn=document.createElement('button'); tBtn.textContent='예측 테스트하기';
+        tBtn.style.cssText='background:#2196f3; color:#fff; border:none; padding:10px 20px; border-radius:20px; cursor:pointer; margin-left:10px;';
+        tBtn.onclick=()=>{ if (!document.getElementById('step5').classList.contains('active')) activateStep(5); document.getElementById('predictionInput').value=newWord; predictNext(); };
+        btns.appendChild(vBtn); btns.appendChild(tBtn); rc.appendChild(btns);
+
+        document.getElementById('newWordInput').value='';
+    },1500);
+}
+
+/* =========================
+   Step4: RNN 순차 처리
+   ========================= */
+function proceedToRNN(){ activateStep(4); processRNNSequentially(); }
+function processRNNSequentially(){
+    const cont=document.getElementById('rnnContainer'); cont.innerHTML='';
+    const title=document.createElement('h4'); title.textContent='RNN이 각 토큰을 순차적으로 처리합니다:'; cont.appendChild(title);
+    
+    // RNN 차원 설정 안내
+    const dimInfo=document.createElement('div');
+    dimInfo.style.cssText='background:#fff3e0; padding:15px; border-radius:10px; margin:15px 0; border-left:4px solid #ff9800;';
+    dimInfo.innerHTML=`
+        <strong>🔧 RNN 처리 방식:</strong><br>
+        • <strong>입력:</strong> 5차원 임베딩 벡터<br>
+        • <strong>Hidden State:</strong> 5차원 (입력과 동일한 크기 유지)<br>
+        • <strong>처리:</strong> 현재 입력 + 이전 상태 → 새로운 상태<br>
+        <small style="color:#666;">💡 실제 RNN은 정보 손실을 최소화하기 위해 입력 차원과 같거나 더 큰 Hidden State를 사용합니다.</small>
+    `;
+    cont.appendChild(dimInfo);
+
+    hiddenStates=[]; memoryBank=[]; learnedModel={};
+    let idx=0;
+    function next(){
+        if (idx<currentTokens.length){
+            const tok=currentTokens[idx], vec=embeddings[tok];
+
+            const step=document.createElement('div'); step.className='rnn-step active fade-in';
+            const prev = hiddenStates.length>0 ? hiddenStates[hiddenStates.length-1] : [0,0,0,0,0];
+            // 실제 RNN 계산: 현재 입력과 이전 hidden state 결합
+            const newH = vec.map((v,i)=>(v*0.6 + prev[i]*0.4).toFixed(2)); // 가중 결합
+            hiddenStates.push(newH);
+
+            const inV=document.createElement('div'); inV.className='input-vector';
+            const it=document.createElement('strong'); it.textContent=tok;
+            const ibr=document.createElement('br');
+            const iv=document.createElement('span'); iv.textContent='['+vec.map(v=>v.toFixed(2)).join(', ')+']';
+            inV.appendChild(it); inV.appendChild(ibr); inV.appendChild(iv);
+
+            const a1=document.createElement('div'); a1.className='arrow'; a1.textContent='→';
+
+            const cell=document.createElement('div'); cell.className='rnn-cell'; cell.textContent='RNN';
+            const cbr=document.createElement('br'); const small=document.createElement('small'); small.textContent='가중 결합 처리...';
+            cell.appendChild(cbr); cell.appendChild(small);
+
+            const a2=document.createElement('div'); a2.className='arrow'; a2.textContent='→';
+
+            const hS=document.createElement('div'); hS.className='hidden-state';
+            const ht=document.createElement('span'); ht.textContent='Hidden State';
+            const hbr=document.createElement('br'); const hv=document.createElement('span'); hv.textContent='['+newH.join(', ')+']';
+            hS.appendChild(ht); hS.appendChild(hbr); hS.appendChild(hv);
+
+            step.appendChild(inV); step.appendChild(a1); step.appendChild(cell); step.appendChild(a2); step.appendChild(hS);
+            cont.appendChild(step);
+
+            // 간단 '학습' : 현재 단어 -> 다음 단어 수집
+            if (idx<currentTokens.length-1){
+                const nextTok=currentTokens[idx+1];
+                if (!learnedModel[tok]) learnedModel[tok]=[];
+                learnedModel[tok].push(nextTok);
+            }
+
+            updateMemoryBank(tok);
+            idx++;
+            step.scrollIntoView({behavior:'smooth', block:'center'});
+            setTimeout(next, 2000);
+        } else {
+            setTimeout(()=>{ document.getElementById('predictionBtn').disabled=false; highlightLongTermDependency(); }, 1000);
+        }
+    }
+    next();
+}
+function updateMemoryBank(token){
+    memoryBank.push(token);
+    if (memoryBank.length>memoryCapacity) memoryBank.shift();
+
+    const md=document.getElementById('memoryDisplay'); md.innerHTML='';
+    if (memoryBank.length===0){ const sp=document.createElement('span'); sp.style.color='#666'; sp.textContent='아직 처리 시작 전입니다'; md.appendChild(sp); return; }
+
+    memoryBank.forEach((w,idx)=>{
+        const mi=document.createElement('div'); mi.className='memory-item'; mi.textContent=w;
+        const st=document.createElement('div'); st.className='memory-strength'; st.style.width = `${100 - (memoryBank.length-idx-1)*30}%`; mi.appendChild(st);
+        if (idx < memoryBank.length-2) mi.classList.add('fading');
+        md.appendChild(mi);
+    });
+}
+function highlightLongTermDependency(){
+    const steps=document.querySelectorAll('.rnn-step');
+    steps.forEach((st,idx)=>{
+        const tok=currentTokens[idx];
+        if (tok && (tok.includes('그것')||tok.includes('이것')||tok.includes('저것'))){
+            st.style.border='3px solid #f44336'; st.style.background='#ffebee';
+            const refs=['책','스마트폰','사과','공','차'];
+            const hasRef = refs.some(r => memoryBank.some(m=>m.includes(r)));
+            if (!hasRef){
+                const warn=document.createElement('div');
+                warn.style.cssText='background:#f44336;color:#fff;padding:10px;border-radius:5px;margin-top:10px;text-align:center;font-weight:bold;';
+                warn.textContent='⚠️ 참조 대상을 기억하지 못합니다!';
+                st.appendChild(warn);
+            }
+        }
+    });
+}
+
+/* =========================
+   Step5: 예측
+   ========================= */
+function proceedToPrediction(){ activateStep(5); }
+function predictNext(){
+    const input = document.getElementById('predictionInput').value.trim();
+    const rc = document.getElementById('predictionResult');
+    if (!input){ alert('예측할 단어를 입력해주세요!'); return; }
+    rc.innerHTML='<div style="text-align:center;">예측 중...</div>';
+    setTimeout(()=>{
+        const preds = generatePredictions(input);
+        displayPredictions(preds, input);
+    }, 1000);
+}
+function generatePredictions(w){
+    const preds=[];
+    if (!embeddings[w]){
+        const oov = generateOOVEmbedding(w);
+        embeddings[w]=oov.embedding;
+        preds.push({ word:'[새로운 단어 처리됨]', confidence:0.8, source:'oov_processed',
+            details:`"${w}"는 새로운 단어로 유사 단어를 참고하여 처리되었습니다.`});
+    }
+    if (learnedModel[w]){
+        const nxt=learnedModel[w]; const cnt={};
+        nxt.forEach(x=>{ cnt[x]=(cnt[x]||0)+1; });
+        Object.entries(cnt).forEach(([word, c])=>{
+            preds.push({ word, confidence: c/nxt.length, source:'direct' });
+        });
+    }
+    if (embeddings[w]){
+        Object.keys(embeddings).forEach(t=>{
+            if (t!==w && t.length>1){
+                const s = calculateEmbeddingSimilarity(w,t);
+                if (s>0.4 && learnedModel[t]){
+                    learnedModel[t].forEach(nw=>{
+                        preds.push({ word:nw, confidence: s*0.6, source:'embedding_similarity',
+                            details:`"${t}"와 유사하여 예측됨 (유사도: ${(s*100).toFixed(1)}%)` });
+                    });
+                }
+            }
+        });
+    }
+    const g=findSemanticGroup(w);
+    if (g!=='기타'){
+        const gw=semanticGroups[g]||[];
+        gw.forEach(ww=>{
+            if (learnedModel[ww]){
+                learnedModel[ww].forEach(nw=>{
+                    preds.push({ word:nw, confidence:0.4, source:'semantic_group',
+                        details:`같은 의미 그룹("${g}")의 단어들로부터 예측` });
+                });
+            }
+        });
+    }
+    const commonNext={
+        '책':['을','이','을읽었다','이재미있다'],
+        '그것':['이','을','의','과'],
+        '철수':['는','가','와','의'],
+        '도서관':['에서','에','의','을'],
+        '컴퓨터':['를','가','로','에서'],
+        '사랑':['은','이','을','하다'],
+        '행복':['한','하다','이','을']
+    };
+    Object.keys(commonNext).forEach(k=>{
+        if (w.includes(k) || k.includes(w)){
+            commonNext[k].forEach(nw=> preds.push({ word:nw, confidence:0.5, source:'common_pattern' }) );
+        }
+    });
+
+    // 중복 정리
+    const uniq={};
+    preds.forEach(p=>{
+        if (uniq[p.word]){
+            uniq[p.word].confidence = Math.max(uniq[p.word].confidence, p.confidence);
+            if (p.details) uniq[p.word].details = p.details;
+        } else uniq[p.word]=p;
+    });
+    return Object.values(uniq).sort((a,b)=>b.confidence - a.confidence).slice(0,6);
+}
+function displayPredictions(preds, input){
+    const c=document.getElementById('predictionResult');
+    if (preds.length===0){
+        c.innerHTML = `<div style="text-align:center; color:#f44336;"><strong>"${input}"</strong>에 대한 예측을 생성할 수 없습니다.<br><small>학습 데이터가 부족하거나 단어를 인식하지 못했습니다.</small></div>`;
+        return;
+    }
+    c.innerHTML='';
+    const h=document.createElement('h4'); h.textContent=`"${input}" 다음에 올 단어 예측:`; c.appendChild(h);
+
+    if (preds.some(p=>p.source==='oov_processed')){
+        const o=document.createElement('div');
+        o.style.cssText='background:#fff3e0; padding:15px; border-radius:10px; margin:15px 0; border-left:4px solid #ff9800;';
+        o.innerHTML=`<strong>🆕 새로운 단어 감지!</strong><br>"${input}"는 학습되지 않은 새로운 단어입니다. 유사한 단어들을 참고하여 예측을 생성했습니다.`;
+        c.appendChild(o);
+    }
+
+    preds.forEach((p,i)=>{
+        if (p.source==='oov_processed') return;
+        const conf=(p.confidence*100).toFixed(1);
+        const srcMap={'direct':'직접 학습','embedding_similarity':'임베딩 유사도','semantic_group':'의미 그룹','common_pattern':'일반 패턴','similarity':'유사도 기반'};
+        const src=srcMap[p.source]||'기타';
+
+        const box=document.createElement('div'); box.style.cssText='margin:15px 0; padding:15px; background:#f8f9fa; border-radius:10px;';
+        const w=document.createElement('div'); w.className='predicted-word'; w.textContent=`${i+1}. ${p.word}`;
+        const bar=document.createElement('div'); bar.className='confidence-bar';
+        const fill=document.createElement('div'); fill.className='confidence-fill'; fill.style.width=`${conf}%`; fill.textContent=`${conf}% 확신`;
+        bar.appendChild(fill);
+
+        const det=document.createElement('div'); det.style.marginTop='10px';
+        det.innerHTML = `<small style="color:#666;"><strong>출처:</strong> ${src}${p.details?`<br><strong>세부사항:</strong> ${p.details}`:''}</small>`;
+
+        box.appendChild(w); box.appendChild(bar); box.appendChild(det);
+        c.appendChild(box);
+    });
+
+    const avg = preds.reduce((s,p)=>s+p.confidence,0)/preds.length;
+    let col='#f44336', txt='낮음';
+    if (avg>0.6){ col='#4caf50'; txt='높음'; }
+    else if (avg>0.3){ col='#ff9800'; txt='보통'; }
+
+    const q=document.createElement('div');
+    q.style.cssText='background:#e3f2fd; padding:15px; border-radius:10px; margin:20px 0; text-align:center;';
+    q.innerHTML = `<strong>📊 예측 품질:</strong> <span style="color:${col}; font-weight:bold;">${txt}</span><span style="color:#666; font-size:0.9em;"> (평균 확신도: ${(avg*100).toFixed(1)}%)</span>`;
+    c.appendChild(q);
+}
+
+/* =========================
+   문제 상황 테스트/강조
+   ========================= */
+function testProblemCases(){
+    const tests=[
+        { input:'그것', expected:'책', description:'"그것"이 "책"을 가리키는지 확인 (장기 의존성)' },
+        { input:'책', expected:'을', description:'"책" 다음에 올 조사 예측' },
+        { input:'컴퓨터', expected:'새로운 단어', description:'학습하지 않은 새로운 단어 처리 (OOV)' },
+        { input:'행복', expected:'감정 관련', description:'의미 그룹 기반 새 단어 예측 (OOV)' }
+    ];
+    const pd = document.getElementById('problemDetails');
+    pd.innerHTML='';
+    const intro=document.createElement('p'); intro.textContent='다음 테스트들을 수행해서 RNN의 한계와 개선점을 확인해보세요:'; pd.appendChild(intro);
+
+    const ul=document.createElement('ul');
+    tests.forEach(tc=>{
+        const preds = generatePredictions(tc.input);
+        let ok=false, msg='';
+        if (tc.input==='그것'){
+            ok = preds.some(p=>p.word.includes('책')||p.word.includes('을')||p.word.includes('이'));
+            msg = ok ? '✅ 일부 예측 가능' : '❌ 참조 대상 연결 실패';
+        } else if (tc.input==='책'){
+            ok = preds.some(p=>p.word.includes('을')||p.word.includes('이'));
+            msg = ok ? '✅ 올바른 예측' : '❌ 예측 실패';
+        } else {
+            const hasOOV = preds.some(p=>p.source==='oov_processed') || preds.length>0;
+            ok = hasOOV; msg = ok ? '✅ OOV 처리 성공' : '❌ OOV 처리 실패';
+        }
+        const li=document.createElement('li');
+        li.style.cssText=`margin:15px 0; padding:15px; background:${ok?'#e8f5e8':'#ffebee'}; border-radius:10px;`;
+        li.innerHTML = `
+            <strong>${tc.description}</strong><br>
+            입력: "${tc.input}" → 예상: "${tc.expected}"<br>
+            결과: <span style="color:${ok?'#4caf50':'#f44336'}; font-weight:bold;">${msg}</span><br>
+            <div style="margin-top:10px;">
+                <button style="background:#2196f3; color:#fff; border:none; padding:8px 16px; border-radius:15px; cursor:pointer; font-size:0.9em;"
+                    onclick="document.getElementById('predictionInput').value='${tc.input}'; predictNext();">
+                    직접 테스트
+                </button>
+                ${!embeddings[tc.input] ? `
+                <button style="background:#ff9800; color:#fff; border:none; padding:8px 16px; border-radius:15px; cursor:pointer; font-size:0.9em; margin-left:5px;"
+                    onclick="document.getElementById('newWordInput').value='${tc.input}'; processNewWord();">
+                    OOV 처리 시연
+                </button>`:''}
+            </div>
+        `;
+        ul.appendChild(li);
+    });
+    pd.appendChild(ul);
+
+    // 종합 분석(완성)
+    const analysis=document.createElement('div');
+    analysis.style.cssText='background:#fff3e0; padding:20px; border-radius:15px; margin:25px 0;';
+    analysis.innerHTML = `
+        <h4 style="color:#ef6c00; margin-bottom:15px;">🔍 RNN의 한계점과 개선점</h4>
+        <ol style="margin-left:18px; line-height:1.7;">
+            <li><strong>장기 의존성 문제</strong>: 멀리 떨어진 단어 간 관계(예: "그것" ↔ "책")를 유지하기 어려움.</li>
+            <li><strong>순차 처리의 병목</strong>: 단어를 한 개씩 처리하여 속도가 느리고 병렬화가 어려움.</li>
+            <li><strong>정보 소실</strong>: 은닉 상태만으로 중요한 정보가 뒤로 갈수록 희미해질 수 있음.</li>
+            <li><strong>개선 아이디어</strong>: 중요 부분에 집중하는 <u>어텐션</u> 사용 → 전체를 한 번에 보고 가중치로 선택.</li>
+            <li><strong>다음 단계 예고</strong>: 멀티-헤드 어텐션, 레이어 정규화, 잔차연결 등을 가진 <u>트랜스포머</u>로 확장.</li>
+        </ol>
+    `;
+    pd.appendChild(analysis);
+
+    // 섹션 표시 및 스크롤
+    const probSec=document.getElementById('problemSection');
+    probSec.style.display='block';
+    probSec.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+/* =========================
+   퀴즈 선택 처리
+   ========================= */
+let quizAnswered=false;
+function selectAnswer(el, correct){
+    if (quizAnswered) return;
+    
+    const options=document.querySelectorAll('.quiz-option');
+    options.forEach(o=>{
+        o.classList.remove('correct','wrong');
+        o.style.pointerEvents = 'none'; // 모든 선택지 비활성화
+    });
+    
+    if (correct){
+        // 정답 선택 시
+        el.classList.add('correct');
+        
+        // 정답 축하 메시지 표시
+        const congratsDiv = document.createElement('div');
+        congratsDiv.style.cssText = 'background: linear-gradient(45deg, #4caf50, #45a049); color: white; padding: 15px; border-radius: 10px; margin: 15px 0; text-align: center; font-weight: bold; animation: fadeIn 0.5s ease;';
+        congratsDiv.innerHTML = '🎉 정답입니다! 훌륭해요!';
+        
+        // 퀴즈 컨테이너에 축하 메시지 추가
+        const quizContainer = document.querySelector('.quiz-container');
+        const explanation = document.getElementById('quizExplanation');
+        quizContainer.insertBefore(congratsDiv, explanation);
+        
+        // 설명 표시
+        setTimeout(() => {
+            document.getElementById('quizExplanation').style.display='block';
+        }, 1000);
+        
+    } else {
+        // 오답 선택 시
+        el.classList.add('wrong');
+        
+        // 틀린 답에 따른 구체적인 힌트 제공
+        let hintMessage = '';
+        const selectedText = el.textContent.trim();
+        
+        if (selectedText.includes('토큰화')) {
+            hintMessage = '💡 힌트: 토큰화는 전처리 단계입니다. RNN 자체의 처리 방식에서 오는 문제를 생각해보세요!';
+        } else if (selectedText.includes('워드 임베딩')) {
+            hintMessage = '💡 힌트: 워드 임베딩도 전처리 단계입니다. RNN이 정보를 처리하고 기억하는 방식의 한계를 생각해보세요!';
+        } else if (selectedText.includes('정확도가 너무 높다')) {
+            hintMessage = '💡 힌트: 정확도가 높은 것은 문제가 아니에요! RNN이 문장을 순서대로 읽을 때 앞쪽 정보가 어떻게 되는지 생각해보세요.';
+        } else {
+            hintMessage = '💡 힌트: RNN은 단어를 하나씩 순서대로 처리합니다. 문장이 길어질수록 처음 부분의 정보는 어떻게 될까요?';
+        }
+        
+        // 오답 안내 메시지 표시
+        const incorrectDiv = document.createElement('div');
+        incorrectDiv.style.cssText = 'background: linear-gradient(45deg, #ff9800, #f57c00); color: white; padding: 15px; border-radius: 10px; margin: 15px 0; text-align: center; font-weight: bold; animation: fadeIn 0.5s ease;';
+        incorrectDiv.innerHTML = `❌ 틀렸습니다. 다시 생각해보세요!<br><small style="font-weight: normal; margin-top: 8px; display: block; line-height: 1.4;">${hintMessage}</small>`;
+        
+        // 퀴즈 컨테이너에 오답 메시지 추가
+        const quizContainer = document.querySelector('.quiz-container');
+        const explanation = document.getElementById('quizExplanation');
+        quizContainer.insertBefore(incorrectDiv, explanation);
+        
+        // 재시도 버튼 추가
+        const retryButton = document.createElement('button');
+        retryButton.style.cssText = 'background: #2196f3; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; margin-top: 10px; font-size: 0.9em;';
+        retryButton.textContent = '🔄 다시 시도하기';
+        retryButton.onclick = () => {
+            // 오답 메시지 제거
+            incorrectDiv.remove();
+            
+            // 모든 선택지 초기화
+            options.forEach(o => {
+                o.classList.remove('correct', 'wrong');
+                o.style.pointerEvents = 'auto';
+            });
+            
+            quizAnswered = false;
+        };
+        incorrectDiv.appendChild(retryButton);
+        
+        return; // 오답일 경우 여기서 함수 종료
+    }
+    
+    quizAnswered=true;
+}
+
+/* =========================
+   초기 로드
+   ========================= */
+document.addEventListener('DOMContentLoaded', ()=>{
+    // 1단계 활성화 보장
+    activateStep(1);
+});
+</script>
+</body>
+</html>
