@@ -44,8 +44,8 @@ rnn시뮬/
 4. 브랜치에 푸시합니다: `git push origin feature/new-feature`
 5. Pull Request를 생성합니다.
 
-## 라이선스
-이 프로젝트는 MIT 라이선스 하에 배포됩니다.
+<a href="https://roughkyo.github.io/rnn--/"> (클릭)RNN Simulation </a>
+
 
 ## 연락처
 프로젝트에 대한 질문이나 제안사항이 있으시면 언제든지 연락해주세요.
